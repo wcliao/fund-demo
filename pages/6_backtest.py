@@ -9,9 +9,10 @@ import config
 from backtest.metrics import METRIC_LABELS
 from database import repository as repo
 from services.analysis_service import STRATEGY_LABELS, save_backtests
+from services.validation_service import SPLIT_DATE, seed_summary, split_table
 from strategies.common import drawdown_series
 from ui import components as ui
-from ui.data import backtests, fund_label, get_data, session_weights
+from ui.data import backtests, fund_label, get_data, preset_test, seed_runs, session_weights
 
 master, nav = get_data()
 mom_w, fac_w = session_weights()
@@ -147,6 +148,111 @@ with tab2:
         "targets": "目標持倉", "n_holdings": st.column_config.NumberColumn("檔數", format="%d")})
 
 # ---- 儲存 ----
+# ---- 方法驗證 ----
+st.header("方法驗證：是方法有效，還是剛好賺到？")
+st.markdown("回測賺錢不代表方法有效。正式採用一套規則前，至少要通過兩種檢查："
+            "**① 前段設計、後段驗證**（換一段沒看過的期間還有效嗎？）"
+            "**② 換資料重跑**（換一組走勢還有效嗎？）")
+split_d = SPLIT_DATE
+v1, v2 = st.tabs(["① 前段設計、後段驗證", "② 換資料重跑"])
+
+with v1:
+    st.markdown(f"把回測期間切成兩段：**前段 {first.daily.index[0]:%Y/%m}～{split_d:%Y/%m}** 用來設計、挑參數；"
+                f"**後段 {split_d + pd.Timedelta(days=1):%Y/%m}～{first.daily.index[-1]:%Y/%m}** 假裝是「未來」，只用來驗證。")
+    sp = split_table(results, split_d)
+    show_sp = pd.DataFrame({
+        "策略": [STRATEGY_LABELS[s] for s in sp.index],
+        "前段 年化報酬": sp["in_return"] * 100, "前段 Sharpe": sp["in_sharpe"], "前段 排名": sp["in_rank"],
+        "後段 年化報酬": sp["out_return"] * 100, "後段 Sharpe": sp["out_sharpe"], "後段 排名": sp["out_rank"],
+    })
+    st.dataframe(show_sp, hide_index=True, column_config={
+        "前段 年化報酬": st.column_config.NumberColumn(format="%.1f%%"),
+        "後段 年化報酬": st.column_config.NumberColumn(format="%.1f%%"),
+        "前段 Sharpe": st.column_config.NumberColumn(format="%.2f"),
+        "後段 Sharpe": st.column_config.NumberColumn(format="%.2f"),
+        "前段 排名": st.column_config.NumberColumn(format="%d"), "後段 排名": st.column_config.NumberColumn(format="%d"),
+    })
+    st.caption("排名依 Sharpe（每單位風險的超額報酬）。各段以該段第一天淨值為起點重新計算。")
+
+    st.markdown("**實驗：在前段挑出「最佳」動能權重，到後段還是最佳嗎？**")
+    pt = preset_test()
+    fig_pt = go.Figure()
+    fig_pt.add_trace(go.Bar(x=list(pt.index), y=pt["in_sharpe"], name="前段 Sharpe（設計期）",
+                            marker=dict(color=ui.SERIES[0], line=dict(color="#fcfcfb", width=2)),
+                            hovertemplate="%{y:.2f}"))
+    fig_pt.add_trace(go.Bar(x=list(pt.index), y=pt["out_sharpe"], name="後段 Sharpe（驗證期）",
+                            marker=dict(color=ui.SERIES[1], line=dict(color="#fcfcfb", width=2)),
+                            hovertemplate="%{y:.2f}"))
+    ui.style_fig(fig_pt, "五組動能權重：前段 vs 後段 Sharpe（依前段排名由左到右）", "Sharpe", "權重組合（3M/6M/12M）",
+                 height=380)
+    ui.show_fig(fig_pt, "bt_preset")
+    ui.chart_note(f"前段至 {split_d:%Y-%m-%d}／後段之後", "Sharpe（無單位）", "已扣交易成本；Sharpe 越高代表承擔同樣風險賺得越多")
+    best = pt.index[0]
+    out_best = pt["out_rank"].idxmin()
+    ui.plain(f"前段表現最好的是「{best}」，但到了後段它排第 <b>{pt.loc[best, 'out_rank']}</b> 名；"
+             f"後段最好的反而是「{out_best}」（前段只排第 {pt.loc[out_best, 'in_rank']} 名）。"
+             "這就是<b>過度擬合</b>：在過去資料上挑出「最佳參數」，很可能只是剛好適合那段行情。"
+             "所以正式採用前，一定要用<b>沒參與挑選的資料</b>再驗證一次。" if pt.loc[best, "out_rank"] > 1 else
+             f"前段表現最好的「{best}」到後段仍是第一名，代表這組參數在兩段期間都穩定；"
+             "但仍要用更多期間或資料確認，避免只是巧合。")
+
+with v2:
+    st.markdown("同樣的 10 種走勢設定、同樣的規則，只換亂數種子重新產生資料，看每種方法的結果有多穩定。")
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        n_seeds = st.select_slider("重跑次數（種子數）", options=[10, 20, 30], value=10,
+                                   help="每多 10 次約需 15 秒")
+    with c2:
+        st.write("")
+        run_seeds = st.button("開始重跑", type="primary", key="seed_run")
+    if run_seeds or st.session_state.get("seed_done") == (n_seeds, mom_w, fac_w):
+        with st.spinner(f"以 {n_seeds} 組種子重新產生資料並回測…"):
+            sr = seed_runs(n_seeds, mom_w, fac_w)
+        st.session_state["seed_done"] = (n_seeds, mom_w, fac_w)
+        summ = seed_summary(sr)
+        fig_s = go.Figure()
+        for sid in STRATEGY_LABELS:
+            d_s = sr[sr["strategy"] == sid]
+            fig_s.add_trace(go.Box(y=d_s["cumulative_return"] * 100, name=STRATEGY_LABELS[sid], boxpoints="all",
+                                   jitter=.4, pointpos=0, marker=dict(size=7, color=ui.STRATEGY_COLORS[sid]),
+                                   line=dict(color=ui.STRATEGY_COLORS[sid], width=2), fillcolor="rgba(0,0,0,0)",
+                                   customdata=d_s["seed"], hovertemplate="種子 %{customdata}<br>累積報酬 %{y:.1f}%"
+                                                                         "<extra></extra>"))
+        fig_s.add_hline(y=0, line=dict(color=ui.NEUTRAL, width=1, dash="dot"))
+        ui.style_fig(fig_s, f"{n_seeds} 組模擬資料下的累積報酬分布", "累積報酬（%）", "", height=420, legend=False)
+        fig_s.update_layout(hovermode="closest")
+        ui.show_fig(fig_s, "bt_seeds")
+        ui.chart_note(period, "%", "每個點是一組種子的回測結果；箱子為中間 50% 的範圍，橫線為中位數")
+        show_sm = pd.DataFrame({
+            "策略": [STRATEGY_LABELS[s] for s in summ.index],
+            "中位數報酬": summ["median_return"] * 100, "最差": summ["worst_return"] * 100,
+            "最好": summ["best_return"] * 100, "最大回撤中位數": summ["median_mdd"] * 100,
+            "贏過基準的比例": summ["beat_ratio"] * 100, "排第一的比例": summ["top_ratio"] * 100,
+        })
+        st.dataframe(show_sm, hide_index=True, column_config={
+            c: st.column_config.NumberColumn(format="%.0f%%") for c in show_sm.columns if c != "策略"})
+        top = summ["top_ratio"].idxmax()
+        ui.plain(f"在 {n_seeds} 組資料中，{STRATEGY_LABELS[top]}排第一的比例最高（{summ.loc[top, 'top_ratio']:.0%}），"
+                 f"但最差的一組仍是 {summ.loc[top, 'worst_return']:+.0%}。"
+                 "<b>同一套規則，換一組走勢結果就可能差很多</b>；只看一次回測就下結論，風險很高。"
+                 "另外，這裡的 10 種走勢是刻意設計的（例如包含長期強勢的基金），"
+                 "對順勢的方法較有利——真實市場要用真實資料重新驗證。")
+    else:
+        st.info("按「開始重跑」後計算（約 15～45 秒）。")
+
+st.subheader("從驗證到實際使用")
+st.markdown("""
+| 步驟 | 做什麼 | 本系統 |
+| --- | --- | --- |
+| 1. 寫成規則 | 把挑選、買進、賣出寫成明確規則 | ✅ 三個策略頁 |
+| 2. 歷史回測 | 假設過去照規則操作，看報酬、跌幅、成本 | ✅ 本頁上方 |
+| 3. 樣本外驗證 | 前段設計、後段驗證；換資料重跑 | ✅ 本頁「方法驗證」（模擬資料） |
+| 4. 照規則執行 | 每月底用最新資料跑一次規則，隔天依名單下單 | ⚠️ 側邊欄評估日選最後一天＝本月名單（僅示範，非投資建議） |
+| 5. 追蹤與檢討 | 實際結果與回測差太多時，檢討或停用 | ⬜ 尚未包含 |
+""")
+st.warning("本系統使用模擬資料，只能示範**驗證流程**，不能證明任何方法在真實市場有效。"
+           "要用於實際決策，必須換成真實基金淨值重新跑完第 2、3 步。")
+
 st.subheader("執行並儲存回測")
 st.caption("把四組回測（含參數 config_id、逐日淨值、交易明細）寫入 SQLite。相同參數重用 config_id，回測紀錄每次新增。")
 if st.button("執行並儲存回測", type="primary"):

@@ -30,7 +30,7 @@ python -m venv .venv
 .venv/Scripts/python -m pytest -q
 ```
 
-44 個測試涵蓋：報酬率、SMA、交叉事件、波動率、Sharpe、最大回撤、百分位標準化、權重、回測時點與成本、可重現性、F010 < F002、config 版本化。
+48 個測試涵蓋：報酬率、SMA、交叉事件、波動率、Sharpe、最大回撤、百分位標準化、權重、回測時點與成本、可重現性、F010 < F002、config 版本化、前後段切分與換種子重跑。
 
 ## 架構
 
@@ -41,7 +41,7 @@ simulation/            generate_funds（GBM + 市場階段）、validate（資�
 strategies/            common（報酬、風險、標準化、排名）、momentum、moving_average、multi_factor
 backtest/              engine（月底訊號、t+1 成交、再平衡、成本）、metrics
 database/              schema.sql、repository（存取層）、init_db（建立／重建）
-services/              fund_service、analysis_service（串接策略、回測、儲存）——UI 只呼叫這層
+services/              fund_service、analysis_service（串接策略、回測、儲存）、validation_service（方法驗證）——UI 只呼叫這層
 ui/                    components（RWD 樣式、公式、說明框、圖表版面）、data（st.cache_data 包裝）
 pages/1~8              基金總覽、動能、均線、多因子、基金詳細分析、回測、方法說明、資料管理
 tests/                 pytest
@@ -87,6 +87,7 @@ tests/                 pytest
 5. **多因子評分**：比較 F002 vs F010（走勢相同、費用不同 → 總分不同）。
 6. **基金詳細分析**：同一檔基金的三策略判斷、雷達圖、歷史排名。
 7. **回測比較**：累積淨值、回撤、持倉熱圖、交易紀錄；可存入資料庫。
+   「方法驗證」區塊：前段（~2023/12）設計、後段（2024/01~）驗證，五組動能權重的樣本外排名；換 10～30 組種子重跑的報酬分布。
 8. **方法與資料說明**：公式總表、假設、限制、Schema。
 
 側邊欄的「評估日」可切換到任一月底，策略頁只使用該日以前的資料。

@@ -7,6 +7,7 @@ import streamlit as st
 import config
 from services import analysis_service as svc
 from services.fund_service import load_data, nav_until
+from services.validation_service import momentum_preset_test, seed_robustness
 from strategies import momentum, moving_average, multi_factor
 from strategies.common import normalize_weights
 
@@ -98,3 +99,14 @@ def session_weights() -> tuple[tuple, tuple]:
 
 def fund_label(master: pd.DataFrame, fid: str) -> str:
     return f"{fid} {master.loc[fid, 'name']}"
+
+
+@st.cache_data(show_spinner="比較各組權重的前後段表現…")
+def preset_test() -> pd.DataFrame:
+    master, nav = get_data()
+    return momentum_preset_test(nav, master["expense_ratio"])
+
+
+@st.cache_data(show_spinner=False)
+def seed_runs(n_seeds: int, mom_w: tuple, fac_w: tuple) -> pd.DataFrame:
+    return seed_robustness(list(range(1, n_seeds + 1)), dict(mom_w), dict(fac_w))

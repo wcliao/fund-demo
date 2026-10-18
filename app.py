@@ -10,7 +10,7 @@ from services.fund_service import plain_summary
 from simulation.generate_funds import data_fingerprint
 from ui import components as ui
 from ui.data import (backtests, fund_label, get_data, ma_frame_for, ma_snapshot_at, momentum_at, multi_factor_at,
-                     session_weights)
+                     preset_test, session_weights)
 
 st.set_page_config(page_title="基金量化策略 Demo", page_icon="📊", layout="wide",
                    initial_sidebar_state="auto")
@@ -152,14 +152,46 @@ def home() -> None:
     master, nav = get_data()
     ui.page_header(
         "基金量化策略 Demo",
-        "只看「誰賺最多」來挑基金夠嗎？同一批基金，換三種方法來看，結論會一樣嗎？",
+        "能不能先用歷史資料驗證一套買賣規則，確認有效後，未來就照著這套規則買賣？",
     )
 
-    st.header("30 秒看懂")
+    st.header("量化分析怎麼用在買賣？")
+    st.markdown("量化分析的核心是：**把買賣決策寫成明確規則 → 用歷史資料檢驗 → 通過檢驗才照規則執行**。"
+                "不靠感覺，每一筆決策都能說出原因。")
+    flow = [("寫成規則", "例：「每月底買最近漲最多的 3 檔」"),
+            ("歷史回測", "假設過去照規則操作，結果如何（含手續費）"),
+            ("樣本外驗證", "換一段沒看過的期間、換一組資料，還有效嗎？"),
+            ("照規則執行", "每月底用最新資料跑規則，隔天依名單買賣"),
+            ("追蹤檢討", "實際結果和回測差太多，就檢討或停用")]
+    st.markdown('<div class="card-grid flow-grid">' + "".join(
+        f'<div class="card step"><div class="n">{i + 1}</div><div><b>{t}</b>'
+        f'<div class="d" style="font-size:.85rem;color:#52514e">{d}</div></div></div>'
+        for i, (t, d) in enumerate(flow)) + "</div>", unsafe_allow_html=True)
+    st.markdown("""
+| 步驟 | 本系統對應頁面 | 狀態 |
+| --- | --- | --- |
+| 1. 寫成規則 | 動能策略、均線策略、多因子評分 | ✅ 已示範 |
+| 2. 歷史回測 | 回測比較 | ✅ 已示範 |
+| 3. 樣本外驗證 | 回測比較 →「方法驗證」 | ✅ 已示範（模擬資料） |
+| 4. 照規則執行 | 側邊欄評估日選最後一天＝本月名單 | ⚠️ 僅示範流程 |
+| 5. 追蹤檢討 | — | ⬜ 未包含 |
+""")
+    pt = preset_test()
+    best = pt.index[0]
+    ui.cards([
+        ("回測：動能策略", f"{backtests(*session_weights())['momentum'][1]['cumulative_return']:+.0%}",
+         "照規則操作約 4 年的累積報酬，看起來很好"),
+        ("但是：前段最佳的權重組合", best, f"到後段驗證期掉到第 {pt.loc[best, 'out_rank']} 名（共 {len(pt)} 組）"),
+        ("結論", "回測好 ≠ 未來好", "一定要經過第 3 步樣本外驗證"),
+    ])
+    st.warning("本系統的基金與淨值都是**模擬資料**，所以只能示範「驗證流程」怎麼做，**不能證明任何方法在真實市場有效**。"
+               "要用在實際買賣，必須換成真實基金淨值，重新跑完第 2、3 步。")
+
+    st.header("30 秒看懂這組資料")
     key_points(master, nav)
     ui.plain("挑基金就像挑車子。只看「最高時速」（報酬率）不夠，還要看「穩不穩」（風險）、"
-             "「耗不耗油」（費用），以及「現在是上坡還是下坡」（趨勢）。這個 Demo 用三種常見的量化方法，"
-             "把這些面向<b>用數字、一致的規則</b>算出來，並說明每個數字怎麼來、能信到什麼程度。")
+             "「耗不耗油」（費用），以及「現在是上坡還是下坡」（趨勢）。三種量化方法分別從不同面向，"
+             "把這些<b>寫成數字與一致的規則</b>，再交給回測檢驗。")
 
     st.header("三種方法，用一句話說明")
     c1, c2, c3 = st.columns(3)

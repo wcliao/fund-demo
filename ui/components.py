@@ -40,6 +40,7 @@ h1 { font-size: 1.9rem !important; }
           margin:.3rem 0 1rem 0; line-height:1.7; }
 .plain b:first-child { color:#0a6b0a; }
 .fund-grid { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.flow-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .card.fund .fh { display:flex; justify-content:space-between; align-items:center; gap:.4rem; }
 .card.fund .fv { font-size:1.05rem; margin:.45rem 0 .35rem 0; }
 .card.fund .fl { display:flex; justify-content:space-between; font-size:.85rem; color:var(--muted);
@@ -60,7 +61,7 @@ h1 { font-size: 1.9rem !important; }
   h1 { font-size: 1.45rem !important; } h2 { font-size: 1.2rem !important; } h3 { font-size: 1.05rem !important; }
   .card .v { font-size: 1.1rem; }
   .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
-  .card-grid.fund-grid { grid-template-columns: 1fr; }
+  .card-grid.fund-grid, .card-grid.flow-grid { grid-template-columns: 1fr; }
   .katex { font-size: .95em; }
 }
 </style>
